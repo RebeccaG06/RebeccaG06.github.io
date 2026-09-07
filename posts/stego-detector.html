@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building a Steganalysis Detector | Rebecca Gao</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- MathJax for LaTeX Support -->
+<script>
+  MathJax = {
+    tex: {
+      inlineMath: [['$', '$']],
+      displayMath: [['$$', '$$']]
+    }
+  };
+</script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased leading-relaxed">
+  <div class="max-w-3xl mx-auto px-6 py-12">
+
+    <nav>
+      <a href="../index.html">← Back</a>
+    </nav>
+    <!-- Post header -->
+    <header class="border-b border-gray-200 pt-6 pb-8 mb-8">
+      <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Building a Steganalysis Detector</h1>
+      <p class="text-sm text-gray-500 mt-2">Rebecca Gao &middot; 2026</p>
+    </header>
+
+    <article class="prose prose-gray max-w-none">
+
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-8 mb-3">Background</h2>
+      <p class="text-gray-700 mb-4">
+        I spent around six weeks of this summer working on a steganography detector targeting the WOW algorithm.
+        Most of my time was spent getting to grips with the fundamentals of image processing, computer vision
+        and deep learning.
+      </p>
+      <p class="text-gray-700 mb-4">
+        Optics was my favourite topic in physics this past year, and having just discovered steganography,
+        the intersection felt irresistible.
+      </p>
+      <p class="text-gray-700 mb-4">
+        This project gave me the best of both worlds &mdash; I got to dive into the math behind image processing
+        and machine learning, while getting my hands dirty building something I found genuinely fascinating!
+      </p>
+
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">The project</h2>
+      <p class="text-gray-700 mb-4">
+        Unlike cryptography, which seeks to make a message unreadable, steganography's goal is to make it
+        invisible &mdash; out of sight and out of harm's way. But on the flip side, it can also be used to
+        hide malicious information.
+      </p>
+      <p class="text-gray-700 mb-4">
+        I first learnt about steganography from an episode of the Google DeepMind podcast titled: &ldquo;<a href="https://www.youtube.com/watch?v=V04bm-3d6EQ" 
+     target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline"> When millions of AI agents meet</a> &rdquo;. In it, Nenad Tomašev,
+        Senior Staff Research Scientist at Google DeepMind, introduces the idea of &ldquo;AI agent traps&rdquo;.
+        Tomašev discussed several content-injection methods, but steganographic encoding was the one that
+        stuck with me.
+      </p>
+      <p class="text-gray-700 mb-4">
+        My favourite module in my first year of physics was optics, and combined with my Advanced Electronics
+        elective, I'd been exposed to some ideas in information theory and signal processing. After handing
+        in my last piece of coursework, I began playing around with building a 4f optical system (which
+        performs a double Fourier transform that results in an inverted and scaled version of the input
+        function) in Python. After experimenting with phase masks and filters in my toy setup, I found myself
+        asking: can we use this kind of filtering to help AI agents detect stego images?
+      </p>
+      <p class="text-gray-700 mb-4">
+        Realising I knew far too little about steganography to even contextualise the question, I started
+        doing a mini literature review on steganography and steganalysis. I focused on two main groups:
+        spatial methods, where data is embedded directly into pixels, and transform methods like DCT
+        (Discrete Cosine Transform) steganography.
+      </p>
+      <p class="text-gray-700 mb-4">
+        To make sure I understood the theory, I implemented a simple LSB and DCT 
+        <a href="https://github.com/RebeccaG06/steganography-detector/tree/main/src" 
+     target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline"> encoder and decoder</a>. My favourite part was the zig-zag
+        algorithm &mdash; a clever way to organise DCT coefficients for easier manipulation during the
+        embedding process. To cement the fundamentals, I also wrote <a href="https://github.com/RebeccaG06/steganography-detector/tree/main/src" 
+     target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline"> scripts </a> to carry out basic visual and
+        statistical steganalysis . Both of
+        these steganalysis techniques broke down when faced with steganography embedded using WOW.
+        Full results of LSB, DCT, and WOW steganalysis coming in a separate post...
+      </p>
+      <p class="text-gray-700 mb-4">
+        Next step was building the detector. I decided to tackle the issue of spatial steganography, using a
+        modified version of the BOSSBase dataset (10,296-image set, split 8,236/1,030/1,030 for
+        train/validation/test) with 256&times;256 pixel cover and stego (with 0.4 bpp payload embedded using
+        WOW) images from Hugging Face. In preparation for this next phase of the project, I worked through
+        Michael Nielsen's book <em>Neural Networks and Deep Learning</em>, hand-coding everything as I went
+        to make sure I understood how CNNs work from the ground up. This really paid off, giving me just
+        enough foundation to design my detector.
+      </p>
+      <p class="text-gray-700 mb-4">
+        I started off with a &ldquo;vanilla&rdquo; CNN (with 15 kernels in its first convolutional stage),
+        and the results were as expected. The network proved to be as useless as a blindfolded ape &mdash;
+        actually, somehow worse! I knew I'd need spatial filters eventually, but I'd secretly hoped that
+        because the neural net operated directly on raw pixel values (and thus has far finer sensitivity
+        than the human eye), it might pick up on some subtle statistical characteristics on its own.
+      </p>
+      <p class="text-gray-700 mb-4">
+        Before reading about the neural net architectures and filters used in steganalysis research, I
+        wanted to see how far my own intuition could take me. I knew I needed to isolate the high
+        spatial-frequency components of the images, so I threw a bunch of filters (implemented as NumPy
+        arrays) at the problem: Sobel, Laplacian, general edge detectors, and a few custom ones I made up
+        myself. Just for fun, I also tested the opposite end of the spectrum with low-pass filters like Box,
+        Gaussian, and Binomial.
+      </p>
+      <p class="text-gray-700 mb-4">
+        I apply my arsenal of filters on a cover image and its stego counterpart, which I generated using a
+        toy WOW (Wavelet Obtained Weights) algorithm (separate post on this coming soon...) with a
+        0.4 bpp payload. At this point, I was 100% convinced that no human eye could tell the difference
+        between the two if presented with just one image. Even with the residuals (the filtered images) of
+        the cover and stego placed side by side, you'd have to look pretty carefully to spot any discrepancy.
+        We definitely need some machine learning (before neural networks became popular, researchers used the
+        SRM) involved!
+      </p>
+
+      <!-- ============================================= -->
+      <!-- FILTER BANK SECTION -->
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">Filter math</h2>
+      <p class="text-gray-700 mb-6">
+        The final preprocessing stage I settled on is based on
+        <a href="https://bearworks.missouristate.edu/cgi/viewcontent.cgi?article=4762&context=theses"
+           class="text-blue-600 hover:underline" target="_blank" rel="noopener">this thesis</a>,
+        which uses a bank of 15 high-pass filters.
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">The eight Gabor filters</h3>
+      <p class="text-gray-700 mb-3">
+        A Gabor filter is a sinusoidal wave (the part that picks up on directional texture/edges) multiplied
+        by a Gaussian envelope (the part that fades the response out smoothly with distance from the centre):
+      </p>
+      $$
+      G(x,y) = \exp\left(-\frac{x'^2 + y'^2}{2\sigma^2}\right)\cos\left(\frac{2\pi x'}{\lambda} + \phi\right)
+      $$
+      $$
+      x' = x\cos\theta + y\sin\theta, \qquad y' = -x\sin\theta + y\cos\theta
+      $$
+      <p class="text-gray-700 mb-3">where:</p>
+      <ul class="list-disc list-inside text-gray-700 mb-2 space-y-1">
+        <li>$\sigma$ &mdash; controls the width of the Gaussian envelope (how far the filter's influence extends)</li>
+        <li>$\theta$ &mdash; the orientation of the filter (which direction it's sensitive to)</li>
+        <li>$\lambda$ &mdash; the wavelength of the underlying sinusoid (how tightly spaced the ridges are)</li>
+        <li>$\phi$ &mdash; the phase offset of the sinusoid (shifts the wave left/right within the envelope)</li>
+      </ul>
+      <p class="text-gray-700 mb-3">My bank of 8 Gabor filters is set up with the following parameters:</p>
+      <ul class="list-disc list-inside text-gray-700 mb-4 space-y-1">
+        <li>$\sigma = 1$</li>
+        <li>$\theta = [0, \pi/2, \pi/4, 3\pi/4]$</li>
+        <li>$\phi = [\pi/4, \pi/8]$</li>
+      </ul>
+      <p class="text-gray-400 italic text-sm mb-8">
+        I'll write a separate post on the filters I used including the math involved and before vs after visuals.
+      </p>
+
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">The remaining seven filters</h3>
+      <p class="text-gray-700 mb-6">
+        All 15 filters &mdash; Gabor and non-Gabor alike &mdash; are normalized to have a mean of zero,
+        ensuring the smooth image background cancels out and leaves behind only the faint, high-frequency
+        residuals.
+      </p>
+
+      <h4 class="text-base font-semibold text-gray-900 mt-6 mb-2">SRM filter</h4>
+      $$
+      K_{\text{SRM}} = \frac{1}{12}\begin{bmatrix} -1 & 2 & -1 \\ 2 & -4 & 2 \\ -1 & 2 & -1 \end{bmatrix}
+      $$
+      <p class="text-gray-700 text-sm mb-4">
+        This 3&times;3 core is embedded in a 5&times;5 zero-padded frame (to match the shape of the other
+        14 filters), then zero-mean normalized before use.
+      </p>
+      <img src="../assets/images/srm_filter_heatmap.png" alt="SRM filter heatmap"
+           class="rounded-lg border border-gray-200 shadow-sm my-4 w-64">
+      <details class="mb-8 bg-white border border-gray-200 rounded-lg p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-900">NumPy array</summary>
+        <pre class="text-xs mt-3 overflow-x-auto"><code>def make_srm_kernel():
+    core = np.array([
+        [-1,  2, -1],
+        [ 2, -4,  2],
+        [-1,  2, -1]
+    ], dtype=np.float32) / 12.0
+    kernel = np.zeros((5, 5), dtype=np.float32)
+    kernel[1:4, 1:4] = core
+    return make_zero_mean(kernel)</code></pre>
+      </details>
+
+      <h4 class="text-base font-semibold text-gray-900 mt-6 mb-2">KV filter</h4>
+      $$
+      K_{\text{KV}} = \frac{1}{12}\begin{bmatrix}
+      -1 & -2 & 2 & -2 & -1 \\
+      2 & -6 & 8 & -6 & 2 \\
+      -2 & 8 & -12 & 8 & -2 \\
+      2 & -6 & 8 & -6 & 2 \\
+      -1 & -2 & 2 & -2 & -1
+      \end{bmatrix}
+      $$
+      <p class="text-gray-700 text-sm mb-4">
+        A 5&times;5 kernel from literature by Kodovsk&yacute; and Fridrich, zero-mean normalized
+        before use.
+      </p>
+      <img src="../assets/images/kv_filter_heatmap.png" alt="KV filter heatmap"
+           class="rounded-lg border border-gray-200 shadow-sm my-4 w-64">
+      <details class="mb-8 bg-white border border-gray-200 rounded-lg p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-900">NumPy array</summary>
+        <pre class="text-xs mt-3 overflow-x-auto"><code>def make_kv_kernel():
+    core = np.array([
+        [-1, -2,  2, -2, -1],
+        [ 2, -6,  8, -6,  2],
+        [-2,  8, -12, 8, -2],
+        [ 2, -6,  8, -6,  2],
+        [-1, -2,  2, -2, -1]
+    ], dtype=np.float32) / 12.0
+    return make_zero_mean(core)</code></pre>
+      </details>
+
+      <h4 class="text-base font-semibold text-gray-900 mt-6 mb-2">Directional edge kernels</h4>
+      <p class="text-gray-700 text-sm mb-3">
+      $$
+      K_{\text{left}} = \frac{1}{12}\begin{bmatrix}
+      -1 & 2 & -2 & 0 & 0 \\
+      2 & -6 & 8 & 0 & 0 \\
+      -2 & 8 & -12 & 0 & 0 \\
+      2 & -6 & 8 & 0 & 0 \\
+      -1 & 2 & -2 & 0 & 0
+      \end{bmatrix}
+      $$
+      <p class="text-gray-700 text-sm mb-4">
+      </p>
+      <div class="grid grid-cols-2 gap-3 my-4 max-w-md">
+        <img src="../assets/images/edge_left_filter_heatmap.png" alt="Edge left filter heatmap"
+             class="rounded-lg border border-gray-200 shadow-sm">
+        <img src="../assets/images/edge_right_filter_heatmap.png" alt="Edge right filter heatmap"
+             class="rounded-lg border border-gray-200 shadow-sm">
+        <img src="../assets/images/edge_top_filter_heatmap.png" alt="Edge top filter heatmap"
+             class="rounded-lg border border-gray-200 shadow-sm">
+        <img src="../assets/images/edge_bottom_filter_heatmap.png" alt="Edge bottom filter heatmap"
+             class="rounded-lg border border-gray-200 shadow-sm">
+      </div>
+      <details class="mb-8 bg-white border border-gray-200 rounded-lg p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-900">NumPy array</summary>
+        <pre class="text-xs mt-3 overflow-x-auto"><code>def make_edge_kernels():
+    edge_left = np.array([
+        [-1,  2, -2,  0,  0],
+        [ 2, -6,  8,  0,  0],
+        [-2,  8, -12, 0,  0],
+        [ 2, -6,  8,  0,  0],
+        [-1,  2, -2,  0,  0]
+    ], dtype=np.float32) / 12.0
+    edge_right  = np.fliplr(edge_left).copy()
+    edge_top    = edge_left.T.copy()
+    edge_bottom = np.flipud(edge_top).copy()
+    return [make_zero_mean(k) for k in
+            [edge_left, edge_right, edge_top, edge_bottom]]</code></pre>
+      </details>
+
+      <h4 class="text-base font-semibold text-gray-900 mt-6 mb-2">KB filter</h4>
+      $$
+      K_{\text{KB}} = \frac{1}{4}\begin{bmatrix} 1 & 2 & 1 \\ 2 & -12 & 2 \\ 1 & 2 & 1 \end{bmatrix}
+      $$
+      <p class="text-gray-700 text-sm mb-4">
+        A Laplacian-style filter targeting the central pixel. Like the SRM filter, this 3&times;3 core is
+        embedded in a 5&times;5 zero-padded frame, then zero-mean normalized.
+      </p>
+      <img src="../assets/images/kb_filter_heatmap.png" alt="KB filter heatmap"
+           class="rounded-lg border border-gray-200 shadow-sm my-4 w-64">
+      <details class="mb-8 bg-white border border-gray-200 rounded-lg p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-900">NumPy array</summary>
+        <pre class="text-xs mt-3 overflow-x-auto"><code>def make_kb_kernel():
+    core = np.array([
+        [ 1,  2,  1],
+        [ 2, -12, 2],
+        [ 1,  2,  1]
+    ], dtype=np.float32) / 4.0
+    kernel = np.zeros((5, 5), dtype=np.float32)
+    kernel[1:4, 1:4] = core
+    return make_zero_mean(kernel)</code></pre>
+      </details>
+
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">Why I chose to use a CNN</h2>
+      <p class="text-gray-700 mb-4">
+        With a fully connected (FC) network, the network does not care about the spatial structure of the
+        pixels (pixel 1 is next to pixel 2), and every single pixel-to-neuron connection has its own
+        independent weight, so it has no built-in way of knowing <em>which</em> inputs are spatially adjacent
+        to each other. This means that if the FC network &lsquo;discovers&rsquo; a statistical pattern (e.g.
+        salt and pepper noise = an outlier pixel surrounded by different-valued neighbours) at the left
+        corner of the image, it does not know to &lsquo;look for&rsquo; this pattern at other places in the
+        image; instead, it would have to rediscover this fact for every spatial location. A CNN, on the other
+        hand, learns filters. If the CNN learns that a particular filter kernel corresponds to some
+        steganographic noise, by convolving the kernel with the image, it will be able to look for this noise
+        at different spatial locations.
+      </p>
+
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">The Architecture: Layer-by-Layer Walkthrough</h2>
+      <p class="text-gray-700 mb-6">I divided the network into three core stages.</p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">1. The Preprocessing Layer</h3>
+      <p class="text-gray-700 mb-4">
+        The very first layer is a <code>nn.Conv2d</code> module holding our 15 custom filters. Here,
+        <code>requires_grad = False</code> freezes the weights so backpropagation cannot alter them. This
+        means the FC layers later on always see the same set of features we've picked by designing the
+        filter kernels.
+      </p>
+      <p class="text-gray-700 mb-4">
+        The layer takes in a single grayscale channel and outputs 15 residual feature maps. One important
+        thing I learnt here is that we don't apply these 15 filters sequentially. If we convolved
+        sequentially, we'd be doing channel composition, which simply &ldquo;grows&rdquo; our receptive field
+        because convolution is associative:
+      </p>
+      $$
+      K_{2}*\left( K_{1}*X \right) = \left( K_{2}*K_{1} \right)*X = K_{\text{eff}}*X
+      $$
+      <p class="text-gray-700 mb-4">
+        For example, convolving a $3 \times 3$ kernel by another $3 \times 3$ kernel just reduces to a single
+        effective $5 \times 5$ kernel! With our 15-kernel case, we get a 61&times;61 effective kernel which
+        has all the features mixed up and probably not very useful. Instead, we apply all 15 filters in
+        parallel to the input image, preserving 15 distinct residual perspectives at the exact same spatial
+        coordinates. We then put all the feature maps into a stack of 15 two-dimensional feature maps (I like
+        to think of it as the layers of sieves in a water filter system).
+      </p>
+      <p class="text-gray-700 mb-4">
+        To compensate for the loss of border dimensions from convolving with $5 \times 5$ kernels, I added 2
+        pixels of zero-padding so the output stays $256 \times 256$, as I want to control my dimensions and
+        only reduce them during the pooling stage later on. Here, I also carried out Batch Normalization
+        across all 15 feature maps to give them zero mean and unit variance. Finally, I used <code>abs()</code>
+        here instead of the ReLU activation function to preserve both positive and negative residuals. In the
+        rest of the network, I've chosen to use ReLU to prevent vanishing gradients (unlike the Sigmoid
+        function, the gradient of ReLU is always 1 for any positive input).
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">2. Feature Learning &amp; Down Sampling</h3>
+      <p class="text-gray-700 mb-4">
+        The next stage is the first trainable convolution layer (meaning we update the weights and biases via
+        backpropagation). The 15 feature maps (from the pre-processing layer) are fed into this second
+        <code>nn.Conv2d</code> module to produce 30 (this can be any number, but I've chosen 30 to compromise
+        between number of features and compute) output feature maps. This layer consists of 450 learnable
+        kernels. What happens is that the 15 input feature maps from the pre-processing stage are
+        individually convolved with 15 unique kernels, and their residuals are summed to form 1 of the 30
+        output feature maps. To make the 2nd output feature map (out of 30) we take the 15 input feature maps
+        (from the pre-processing layer), convolve each feature map with (another) 15 different learnable
+        kernels, and then sum the results to form the 2nd output feature map. We repeat this 30 times.
+      </p>
+      <p class="text-gray-700 mb-4">
+        This is where channel integration (cross-channel mixing) happens. Channel integration is
+        when you combine information across different feature channels at the exact same spatial location.
+        To simplify for intuition: if channel 1 detects a &ldquo;red colour&rdquo; residual and channel 2
+        detects a &ldquo;round shape&rdquo; residual, integrating the channels allows the network to infer
+        that there's a &ldquo;red ball.&rdquo; In our case, it learns which combinations of directional
+        high-frequency residuals indicate steganographic noise. To summarise: channel integration (adding
+        residuals) gives you more depth at a given position (x,y) in the pixel map; channel composition
+        (convolving sequentially) gives you an extended pixel map (more space).
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">Why I chose to down sample</h3>
+      <p class="text-gray-700 mb-4">
+        I used a 4-pixel stride in the feature-learning convolution, which drops the spatial dimensions from
+        256&times;256 to 64&times;64, acting as a layer of abstraction and pooling. I made this choice
+        because steganographic signals don't need pixel-level reconstruction downstream &mdash; I am, at the
+        end of the day, not trying to identify whether the image is a cat or a dog &mdash; and aggressively
+        cutting down the dimensions speeds things up in the later fully connected layer.
+        The key difference between this and the pooling I tried later, though, is that stride is a
+        learned form of down sampling: the convolution's weights are trained via backpropagation to decide
+        what to keep as it steps across the feature map, rather than blindly averaging everything
+        together. AdaptiveAvgPool2d, on the other hand, has no parameters and no way to learn what
+        matters &mdash; it just takes a local average. That's likely why stride=4 here didn't cause the same
+        damage that pooling did later.
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">3. Classification</h3>
+      <p class="text-gray-700 mb-4">
+        The third and last stage does the classification. The convolution layers are only partially
+        connected, but for classification, all the neurons are fully connected. This stage has 3 hidden
+        layers with 100 neurons each, and the final output layer has 2 target classes (cover vs stego). I've
+        used a dropout rate of 0.6 (during training, the neural net can only use 40% of its neurons). Dropout
+        helps prevent overfitting (reducing the accuracy gap between training and validation data).
+      </p>
+      <p class="text-gray-700 mb-4">
+        I decided to use the Cross Entropy Loss function, which helps avoid neuron saturation in the final
+        (output) layer because the $p_i$ term common to both cross-entropy's derivative and softmax's
+        derivative cancels, leaving a non-vanishing gradient (full derivation coming in a separate post). I also used
+        weight decay, which penalizes large weights, helping the model generalise better.
+      </p>
+
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">Results and discussion</h2>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">Limitations</h3>
+      <p class="text-gray-700 mb-4">
+        Training data was sourced from <a href="https://huggingface.co/datasets/italoaa/Cropped_BOSSBase_1.01_WOW_S-UNIWARD/viewer" 
+     target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline"> italoaa/Cropped_BOSSBase_1.01_WOW_S-UNIWARD</a> on Hugging
+        Face, which provides 20,000 cover and 20,000 WOW-stego images (40,000 total). I could only retrieve
+        10,296 images (&asymp;25.7% of the full dataset) due to persistent HTTP 429 (rate limit) errors from
+        Hugging Face. I tried many attempts, including: authenticated
+        requests (using an HF token), using only one downloading worker, downloading to my OS instead of
+        Kaggle, and spreading download attempts across multiple days. My final solution was to
+        download the reduced 10,296-image subset locally, then upload it to Kaggle (as
+        <code>rebbyg/bossbase-wow-matched</code>) to train in that environment. All results reported here use
+        this reduced 10,296-image set, split 8,236/1,030/1,030 for train/validation/test. A small training
+        set likely contributes to the observed train-validation gap.
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-8 mb-3">Here are the 3 big changes I made</h3>
+
+      <p class="text-gray-700 mb-2"><strong>Architecture 1:</strong> Used Global Average Pooling
+        (<code>AdaptiveAvgPool2d((1,1))</code>), which collapsed the 30&times;64&times;64 feature map to just
+        30 values before the fully connected layers.</p>
+      <p class="text-gray-700 mb-4"><strong>Problem:</strong> Both train and evaluation accuracy were flat
+        ~55%, and evaluation loss was stuck ~0.7 across all epochs &mdash; the model wasn't learning
+        anything.</p>
+
+      <p class="text-gray-700 mb-2"><strong>Architecture 2:</strong> I tried adding more convolutional
+        layers. Here are the architectures I tried:</p>
+      <ul class="list-disc list-inside text-gray-700 mb-4 space-y-1">
+        <li> 1 Conv2d feature-learning layer with kernel size 5, stride 4, and milder pooling
+          (<code>AdaptiveAvgPool2d((32,32))</code>)</li>
+        <li> 3 Conv2d layers, kernel sizes 5,3,3, strides 4,2,2, with global pooling</li>
+        <li> 3 Conv2d layers, kernel sizes 3,3,3, strides 2,2,1, with no pooling</li>
+      </ul>
+      <p class="text-gray-700 mb-4">
+        For each change in pooling/number of Conv2d layers, I also tested adding early stopping (lowest
+        evaluation loss), tried a range of weight decay values [1e-4, 3&times;1e-4, 4&times;1e-4,
+        5&times;1e-4, 1e-3], and various dropout rates p [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], results not shown here. I also tried
+        creating more training data by flipping the image vertically and horizontally (randomly) to see if
+        it would help the model generalize better, but that produced no visible improvement.
+      </p>
+      <p class="text-gray-700 mb-4">
+        <strong>Problem:</strong> There was a slight improvement with the milder pooling architecture &mdash;
+        evaluation accuracy reached 69.9% at best, with 76.6% on training data. Along with the overfitting
+        gap, this showed that even moderate pooling before classification was detrimental to accuracy.
+      </p>
+
+      <p class="text-gray-700 mb-2"><strong>Architecture 3:</strong> No pooling, weight decay = 3&times;1e-4,
+        lr = 1e-4, dropout = 0.6, early stopping.</p>
+      <p class="text-gray-700 mb-8">
+        <strong>Results:</strong> This is the model I've settled on. My best result is a training accuracy of
+        91.4% and evaluation accuracy of 77.7%, with training and evaluation loss of 0.23 and 0.45
+        respectively. This model was then tested on the test data and obtained test accuracy of 77.8% and
+        test loss of 0.47. The small gap between both accuracy and loss is reassuring, as it suggests that my
+        validation-based model selection was not just overfitting to the validation data.
+      </p>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-8 mb-3">Results summary</h3>
+      <div class="overflow-x-auto mb-8">
+        <table class="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="text-left px-4 py-2 font-semibold text-gray-900">Architecture / Change</th>
+              <th class="text-left px-4 py-2 font-semibold text-gray-900">Key hyperparameters</th>
+              <th class="text-right px-4 py-2 font-semibold text-gray-900">Train Acc</th>
+              <th class="text-right px-4 py-2 font-semibold text-gray-900">Eval Acc</th>
+              <th class="text-right px-4 py-2 font-semibold text-gray-900">Train Loss</th>
+              <th class="text-right px-4 py-2 font-semibold text-gray-900">Eval Loss</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Baseline / pre-processing</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Vanilla CNN (no pre-processing)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">58.6%</td>
+              <td class="px-4 py-2 text-right text-gray-700">56.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.67</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.68</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">+ Pre-processing (ReLU)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">94.8%</td>
+              <td class="px-4 py-2 text-right text-gray-700">76.1%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.14</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.49</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">+ Pre-processing (ReLU, weight decay)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5, wd=1e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">98.0%</td>
+              <td class="px-4 py-2 text-right text-gray-700">77.0%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.053</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.70</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">+ Pre-processing (Abs)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">94.2%</td>
+              <td class="px-4 py-2 text-right text-gray-700">75.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.16</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.53</td>
+            </tr>
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pooling experiments</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Global Average Pooling (1&times;1)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5, wd=1e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">55.8%</td>
+              <td class="px-4 py-2 text-right text-gray-700">56.4%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.68</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.67</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Milder pooling (32&times;32)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5, wd=1e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">76.6%</td>
+              <td class="px-4 py-2 text-right text-gray-700">69.9%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.48</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.58</td>
+            </tr>
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Added convolutional depth</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">3 conv layers (k=5,3,3 / stride=4,2,2) + global pooling</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4, dropout=0.6</td>
+              <td class="px-4 py-2 text-right text-gray-700">55.6%</td>
+              <td class="px-4 py-2 text-right text-gray-700">57.1%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.68</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.68</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">3 conv layers (k=3,3,3 / stride=2,2,1), no pooling</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4, dropout=0.6</td>
+              <td class="px-4 py-2 text-right text-gray-700">97.5%</td>
+              <td class="px-4 py-2 text-right text-gray-700">74.2%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.076</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.63</td>
+            </tr>
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Data augmentation</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">No pooling, original data</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5, wd=1e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">77.9%</td>
+              <td class="px-4 py-2 text-right text-gray-700">76.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.50</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.50</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">No pooling, augmented data (flips)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5, wd=1e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">90.4%</td>
+              <td class="px-4 py-2 text-right text-gray-700">76.4%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.26</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.49</td>
+            </tr>
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Weight decay sweep</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Weight decay = 5e-4</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">94.5%</td>
+              <td class="px-4 py-2 text-right text-gray-700">76.1%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.15</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.53</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Weight decay = 4e-4</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">86.7%</td>
+              <td class="px-4 py-2 text-right text-gray-700">74.9%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.34</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.47</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Weight decay = 3e-4</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
+              <td class="px-4 py-2 text-right text-gray-700">94.9%</td>
+              <td class="px-4 py-2 text-right text-gray-700">77.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.14</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.50</td>
+            </tr>
+
+            <tr class="bg-gray-50">
+              <td colspan="6" class="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Dropout rate sweep</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Dropout = 0.7</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">88.2%</td>
+              <td class="px-4 py-2 text-right text-gray-700">75.8%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.28</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.49</td>
+            </tr>
+            <tr class="bg-green-50">
+              <td class="px-4 py-2 text-gray-900 font-medium">Dropout = 0.6 (FINAL MODEL)</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4, early stopping</td>
+              <td class="px-4 py-2 text-right text-gray-900 font-medium">91.4%</td>
+              <td class="px-4 py-2 text-right text-gray-900 font-medium">77.7%</td>
+              <td class="px-4 py-2 text-right text-gray-900 font-medium">0.23</td>
+              <td class="px-4 py-2 text-right text-gray-900 font-medium">0.45</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Dropout = 0.5</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">92.7%</td>
+              <td class="px-4 py-2 text-right text-gray-700">74.5%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.20</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.50</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Dropout = 0.4</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">96.8%</td>
+              <td class="px-4 py-2 text-right text-gray-700">74.9%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.10</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.60</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-2 text-gray-700">Dropout = 0.3</td>
+              <td class="px-4 py-2 text-gray-500">lr=1e-4, wd=3e-4</td>
+              <td class="px-4 py-2 text-right text-gray-700">89.2%</td>
+              <td class="px-4 py-2 text-right text-gray-700">74.6%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.31</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.47</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+      <p class="text-gray-600 text-sm mb-8">
+        Green highlight = final selected model. Final model tested at <strong>77.8% test accuracy</strong>,
+        0.47 test loss. All results were from 10 epochs per run.
+      </p>
+      <!-- ============================================= -->
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">Final thoughts</h2>
+      <p class="text-gray-700 mb-4">
+        Both pooling-based attempts to reduce overfitting made results worse, not better. Data augmentation
+        was neutral &mdash; the model didn't learn anything new from it. Adding more convolutional layers
+        also did not give visible improvements, so I went back to just one convolutional feature-learning
+        layer with kernel size 5 and stride 4 while I tested out other hyperparameters (dropout rate and
+        weight decay). What adding more convolution did do was improve the efficiency of the model: with 3
+        layers, the highest validation accuracy plateaued at around epoch 4&ndash;5, whereas the validation
+        ceiling was only reached near epoch 9&ndash;10 with just one layer. There wasn't much change using
+        ReLU after the preprocessing layer, but it made sense to use <code>Abs()</code> as our activation
+        function since we want to keep the negative residuals. Penalizing large weights using L2
+        regularization showed improvement, but you can overdo it. Dropping out neurons during training helped
+        reduce overfitting, but you can also overdo it. Next time, I will try doing an automated sweep through
+        the hyperparameter space to find the best parameters! Trying out hyperparameters manually helped me
+        build more intuition for what's going on under the hood.
+      </p>
+      <p class="text-gray-700 mb-4">
+        I trained on a modest dataset with a shallow, from-scratch CNN and no pretrained backbone. Having
+        tested adding two extra convolutional layers without meaningful accuracy gains, I reverted to the
+        single-layer architecture as my final model. I instead focused on seeing how much improvement I could
+        squeeze out by tuning everything else.
+      </p>
+      <p class="text-gray-700 mb-4">
+        Thinking about the overfitting gap, I believe it comes down to the size of my dataset. The pooling
+        experiments &mdash; aggressive, then milder &mdash; both made things worse rather than better.
+        Furthermore, adding two extra convolutional layers reached a comparable validation ceiling (~74%),
+        suggesting that the plateau is likely data-limited rather than purely architecture-capacity-limited.
+      </p>
+    
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-900 mt-10 mb-3">Resources I used</h2>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">Academic papers &amp; theses</h3>
+      <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg bg-white mb-6">
+        <li class="px-4 py-3">
+          <a href="https://bearworks.missouristate.edu/cgi/viewcontent.cgi?article=4762&context=theses"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Enhanced Convolutional Neural Network for Image-Based Steganalysis in Spatial Domain
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">A. Dwaik</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://dde.binghamton.edu/vholub/pdf/WIFS12_Designing_Steganographic_Distortion_Using_Directional_Filters.pdf"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Designing Steganographic Distortion Using Directional Filters (WOW)
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">V. Holub &amp; J. Fridrich</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://doi.org/10.1117/12.907495"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Steganalysis of JPEG Images Using Rich Models
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">J. Kodovsk&yacute; &amp; J. Fridrich</p>
+        </li>
+      </ul>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">Books, videos &amp; guides</h3>
+      <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg bg-white mb-6">
+        <li class="px-4 py-3">
+          <a href="http://neuralnetworksanddeeplearning.com/"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Neural Networks and Deep Learning
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">M. Nielsen, Determination Press, 2015</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://visionbook.mit.edu/"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Computer Vision: Algorithms and Applications
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">P. Arbelaez et al., MIT / University textbook resource on filters and computer vision</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://homepages.inf.ed.ac.uk/rbf/HIPR2/log.htm"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Laplacian of Gaussian (LoG)
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">R. Fisher, K. Dawson-Howe, A. Fitzgibbon, C. Robertson &amp; E. Trucco</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://www.youtube.com/watch?v=0me3guauqOU"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            The Unreasonable Effectiveness of JPEG
+          </a>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://www.jezzamon.com/fourier/index.html"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            An Interactive Introduction to the Fourier Transform
+          </a>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://www.imaging.org/IST/IST/Resources/Tutorials/Inside_JPEG.aspx"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            Image Compression Tutorial
+          </a>
+        </li>
+      </ul>
+
+      <h3 class="text-lg font-semibold text-gray-900 mt-6 mb-2">Source code &amp; repositories</h3>
+      <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg bg-white mb-8">
+        <li class="px-4 py-3">
+          <a href="https://github.com/MasonEdgar/DCT-Image-Steganography"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            DCT-Image-Steganography
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">M. W. Edgar &mdash; Python implementation of image steganography</p>
+        </li>
+        <li class="px-4 py-3">
+          <a href="https://github.com/amzhang1/simple-JPEG-compression/blob/master/zigzag.py"
+             target="_blank" rel="noopener noreferrer"
+             class="text-blue-600 font-medium hover:underline">
+            zigzag.py
+          </a>
+          <p class="text-gray-500 text-sm mt-0.5">Python implementation of the zig-zag traverse</p>
+        </li>
+      </ul>
+
+</section>
+
+    </article>
+
+    <footer class="text-xs text-gray-400 border-t border-gray-200 pt-6 mt-12">
+      <p>&copy; 2026 Rebecca Gao. Hosted on GitHub Pages.</p>
+    </footer>
+  </div>
+</body>
+</html>
