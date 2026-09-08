@@ -94,9 +94,7 @@
         modified version of the BOSSBase dataset (10,296-image set, split 8,236/1,030/1,030 for
         train/validation/test) with 256&times;256 pixel cover and stego (with 0.4 bpp payload embedded using
         WOW) images from Hugging Face. In preparation for this next phase of the project, I worked through
-        Michael Nielsen's book <em>Neural Networks and Deep Learning</em>, hand-coding everything as I went
-        to make sure I understood how CNNs work from the ground up. This really paid off, giving me just
-        enough foundation to design my detector.
+        Michael Nielsen's book (Neural Networks and Deep Learning).
       </p>
       <p class="text-gray-700 mb-4">
         I started off with a &ldquo;vanilla&rdquo; CNN (with 15 kernels in its first convolutional stage),
@@ -470,10 +468,10 @@
             <tr>
               <td class="px-4 py-2 text-gray-700">Vanilla CNN (no pre-processing)</td>
               <td class="px-4 py-2 text-gray-500">lr=1e-4, dropout=0.5</td>
-              <td class="px-4 py-2 text-right text-gray-700">58.6%</td>
-              <td class="px-4 py-2 text-right text-gray-700">56.3%</td>
-              <td class="px-4 py-2 text-right text-gray-700">0.67</td>
-              <td class="px-4 py-2 text-right text-gray-700">0.68</td>
+              <td class="px-4 py-2 text-right text-gray-700">53.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">23.3%</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.69</td>
+              <td class="px-4 py-2 text-right text-gray-700">0.80</td>
             </tr>
             <tr>
               <td class="px-4 py-2 text-gray-700">+ Pre-processing (ReLU)</td>
